@@ -1,0 +1,802 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Middagsgenerator</title>
+  <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-database-compat.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, -apple-system, sans-serif; background: #f5f5f3; color: #1a1a18; padding: 2rem 1rem; min-height: 100vh; }
+    .wrap { max-width: 800px; margin: 0 auto; }
+    h1 { font-size: 22px; font-weight: 500; margin-bottom: 0.25rem; }
+    .subtitle { font-size: 13px; color: #888780; margin-bottom: 1.5rem; }
+    .header-row { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 0.25rem; }
+    .share-btn { font-size: 12px; padding: 5px 11px; border-radius: 20px; display: flex; align-items: center; gap: 6px; color: #5f5e5a; border: 0.5px solid rgba(0,0,0,0.18); background: #fff; cursor: pointer; transition: background 0.15s; margin-top: 2px; }
+    .share-btn:hover { background: #f1efe8; }
+    .status-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .dot-local   { background: #aaa; }
+    .dot-syncing { background: #ff9800; animation: pulse 1s infinite; }
+    .dot-synced  { background: #4caf50; }
+    .dot-error   { background: #e24b4a; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+    .section { background: #fff; border: 0.5px solid rgba(0,0,0,0.15); border-radius: 12px; padding: 1rem 1.25rem; margin-bottom: 1rem; }
+    .section-title { font-size: 14px; font-weight: 500; color: #5f5e5a; margin-bottom: 12px; }
+    .add-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+    .add-row-full { display: flex; gap: 8px; margin-bottom: 8px; }
+    .add-row-full input { flex: 1; }
+    .add-row-cat { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; align-items: center; }
+    .cat-label { font-size: 13px; color: #5f5e5a; margin-right: 2px; }
+    .cat-btn { font-size: 12px; padding: 5px 12px; border-radius: 20px; border: 0.5px solid rgba(0,0,0,0.25); background: transparent; cursor: pointer; color: #5f5e5a; transition: background .12s, color .12s, border-color .12s; }
+    .cat-btn:hover { background: #f1efe8; }
+    .cat-btn.active-fisk    { background: #e6f1fb; color: #0c447c; border-color: #378add; }
+    .cat-btn.active-vegetar { background: #eaf3de; color: #27500a; border-color: #639922; }
+    .cat-btn.active-rodt    { background: #fcebeb; color: #791f1f; border-color: #e24b4a; }
+    .cat-btn.active-annet   { background: #f1efe8; color: #2c2c2a; border-color: #888780; }
+    input[type="text"], input[type="url"] { font-size: 14px; padding: 7px 10px; border: 0.5px solid rgba(0,0,0,0.3); border-radius: 8px; background: #fff; color: #1a1a18; width: 100%; outline: none; }
+    input:focus { box-shadow: 0 0 0 2px rgba(55,138,221,0.3); border-color: #378add; }
+    button { font-size: 13px; padding: 7px 14px; border: 0.5px solid rgba(0,0,0,0.3); border-radius: 8px; background: transparent; color: #1a1a18; cursor: pointer; transition: background .15s; }
+    button:hover { background: #f1efe8; }
+    button:active { transform: scale(0.98); }
+    .meal-list { display: flex; flex-direction: column; gap: 6px; }
+    .meal-item { display: flex; align-items: flex-start; gap: 8px; font-size: 14px; padding: 8px 10px; background: #f8f7f4; border-radius: 8px; border: 0.5px solid rgba(0,0,0,0.08); }
+    .meal-item.editing { background: #fff; border-color: #378add; box-shadow: 0 0 0 2px rgba(55,138,221,0.15); }
+    .meal-info { flex: 1; min-width: 0; }
+    .meal-name { font-weight: 500; color: #1a1a18; margin-bottom: 2px; }
+    .meal-ing  { font-size: 12px; color: #888780; margin-bottom: 3px; }
+    .meal-link { font-size: 12px; }
+    .meal-link a { color: #185fa5; text-decoration: none; }
+    .meal-link a:hover { text-decoration: underline; }
+    .cat-tag { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 20px; margin-bottom: 4px; font-weight: 500; }
+    .tag-fisk    { background: #e6f1fb; color: #0c447c; }
+    .tag-vegetar { background: #eaf3de; color: #27500a; }
+    .tag-rodt    { background: #fcebeb; color: #791f1f; }
+    .tag-annet   { background: #f1efe8; color: #444441; }
+    .meal-actions { display: flex; flex-direction: column; gap: 4px; flex-shrink: 0; margin-top: 1px; }
+    .meal-actions button { font-size: 11px; padding: 3px 8px; color: #5f5e5a; }
+    .edit-form { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+    .edit-form input { font-size: 13px; }
+    .edit-cats { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 2px; }
+    .edit-cats button { font-size: 11px; padding: 3px 10px; border-radius: 20px; }
+    .edit-btns { display: flex; gap: 6px; margin-top: 4px; }
+    .edit-btns button { font-size: 12px; padding: 5px 14px; }
+    .btn-save { background: #1a1a18; color: #fff; border-color: #1a1a18; }
+    .btn-save:hover { background: #333; }
+    .btn-primary { background: #1a1a18; color: #fff; border-color: #1a1a18; }
+    .btn-primary:hover { background: #333; }
+    .day-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; }
+    @media (max-width: 600px) { .day-grid { grid-template-columns: repeat(3, 1fr); } .add-grid { grid-template-columns: 1fr; } }
+    .day-card { background: #f1efe8; border-radius: 8px; padding: 10px 12px; min-width: 0; }
+    .day-label { font-size: 11px; font-weight: 500; color: #888780; margin-bottom: 4px; }
+    .day-tag { display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 20px; margin-bottom: 4px; }
+    .day-meal { font-size: 13px; color: #1a1a18; line-height: 1.4; min-height: 34px; }
+    .day-meal a { font-size: 11px; display: block; color: #185fa5; text-decoration: none; margin-top: 3px; }
+    .day-meal a:hover { text-decoration: underline; }
+    .day-actions { display: flex; gap: 4px; margin-top: 6px; }
+    .day-actions button { font-size: 11px; padding: 3px 7px; }
+    .gen-btn { width: 100%; font-size: 14px; padding: 10px; margin-top: 8px; }
+    .rule-info { font-size: 12px; color: #5f5e5a; background: #f8f7f4; border-radius: 8px; padding: 8px 12px; margin-bottom: 10px; border: 0.5px solid rgba(0,0,0,0.08); display: flex; gap: 16px; flex-wrap: wrap; }
+    .rule-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+    .shopping { display: flex; flex-direction: column; gap: 2px; }
+    .shop-item { display: flex; align-items: flex-start; gap: 10px; font-size: 14px; padding: 8px 0; border-bottom: 0.5px solid rgba(0,0,0,0.12); }
+    .shop-item:last-child { border-bottom: none; }
+    .shop-item input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; flex-shrink: 0; margin-top: 2px; }
+    .shop-item-body { display: flex; flex-direction: column; gap: 4px; flex: 1; }
+    .shop-item label { cursor: pointer; color: #1a1a18; line-height: 1.4; }
+    .shop-item label.done { text-decoration: line-through; color: #888780; }
+    .shop-meal-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+    .shop-meal-tag { font-size: 11px; padding: 1px 7px; border-radius: 20px; background: #f1efe8; color: #5f5e5a; border: 0.5px solid rgba(0,0,0,0.10); white-space: nowrap; }
+    .empty { font-size: 13px; color: #888780; padding: 8px 0; }
+    .badge { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 8px; background: #e6f1fb; color: #0c447c; margin-left: 6px; }
+    .warn { background: #faeeda; color: #633806; padding: 8px 12px; border-radius: 8px; font-size: 13px; margin-bottom: 8px; }
+    .divider { height: 0.5px; background: rgba(0,0,0,0.08); margin: 10px 0; }
+    .oda-btn { font-size: 12px; padding: 5px 12px; border-radius: 8px; background: #fff8f0; color: #9a4e00; border-color: #e8a055; }
+    .oda-btn:hover { background: #faeeda; }
+    /* ---- Modal ---- */
+    .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 100; align-items: center; justify-content: center; padding: 1rem; }
+    .modal-overlay.open { display: flex; }
+    .modal { background: #fff; border-radius: 14px; padding: 1.5rem; max-width: 500px; width: 100%; max-height: 92vh; overflow-y: auto; box-shadow: 0 8px 40px rgba(0,0,0,0.18); }
+    .modal-title { font-size: 17px; font-weight: 600; margin-bottom: 0.2rem; }
+    .modal-sub   { font-size: 13px; color: #888780; margin-bottom: 1.25rem; }
+    .modal-tabs  { display: flex; gap: 6px; margin-bottom: 1.25rem; }
+    .modal-tab   { flex: 1; text-align: center; padding: 7px; border-radius: 8px; font-size: 13px; font-weight: 500; cursor: pointer; border: 0.5px solid rgba(0,0,0,0.2); color: #5f5e5a; background: transparent; }
+    .modal-tab.active { background: #1a1a18; color: #fff; border-color: #1a1a18; }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+    .field-label { font-size: 12px; color: #5f5e5a; margin-bottom: 4px; font-weight: 500; }
+    .field-row   { margin-bottom: 12px; }
+    .modal-actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+    .modal-actions .btn-primary { flex: 1; text-align: center; }
+    .setup-steps { display: flex; flex-direction: column; gap: 10px; margin-bottom: 1.25rem; }
+    .setup-step  { display: flex; gap: 10px; font-size: 13px; line-height: 1.55; color: #2a2a28; }
+    .step-num    { width: 22px; height: 22px; border-radius: 50%; background: #f1efe8; color: #5f5e5a; font-size: 11px; font-weight: 700; flex-shrink: 0; display: flex; align-items: center; justify-content: center; margin-top: 1px; }
+    .setup-step a    { color: #185fa5; }
+    .setup-step code { background: #f5f5f3; padding: 1px 5px; border-radius: 4px; font-size: 11.5px; word-break: break-all; }
+    .code-display  { background: #f5f5f3; border-radius: 10px; padding: 14px 16px; margin: 12px 0; text-align: center; }
+    .code-label    { font-size: 12px; color: #888780; margin-bottom: 4px; }
+    .code-value    { font-size: 30px; font-weight: 700; letter-spacing: 5px; color: #1a1a18; font-family: monospace; }
+    .code-copy     { font-size: 12px; color: #185fa5; cursor: pointer; margin-top: 6px; display: inline-block; }
+    .modal-info    { font-size: 12px; color: #5f5e5a; background: #f8f7f4; padding: 10px 12px; border-radius: 8px; margin-top: 10px; line-height: 1.6; }
+    .modal-info strong { color: #1a1a18; }
+    .modal-error   { font-size: 13px; color: #791f1f; background: #fcebeb; padding: 8px 12px; border-radius: 8px; margin-top: 8px; display: none; }
+    .modal-error.show { display: block; }
+    .modal-note    { font-size: 12px; color: #888780; margin-top: 10px; line-height: 1.5; }
+    .disconnect-btn { font-size: 12px; color: #888780; padding: 5px 12px; border-color: rgba(0,0,0,0.15); }
+  </style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="header-row">
+    <div>
+      <h1>Middagsgenerator</h1>
+      <div class="subtitle">Ukesmeny med smart fordeling av fisk, vegetar og kjøtt</div>
+    </div>
+    <button class="share-btn" onclick="openSharingModal()">
+      <span class="status-dot dot-local" id="statusDot"></span>
+      <span id="statusLabel">Lokal</span>
+    </button>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Ukesmeny</div>
+    <div class="rule-info">
+      <span><span class="rule-dot" style="background:#378add"></span>Tirsdag: fisk</span>
+      <span><span class="rule-dot" style="background:#639922"></span>Torsdag: vegetar</span>
+      <span><span class="rule-dot" style="background:#e24b4a"></span>Lørdag: rødt kjøtt</span>
+      <span><span class="rule-dot" style="background:#888780"></span>Resten: fritt</span>
+    </div>
+    <div id="warnBox"></div>
+    <div class="day-grid" id="dayGrid"></div>
+    <button class="gen-btn" onclick="generateMenu()">Generer tilfeldig ukesmeny</button>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Handleliste <span class="badge" id="shopBadge">0 ingredienser</span></div>
+    <div class="shopping" id="shopList"><div class="empty">Generer en ukesmeny for å se handlelisten</div></div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Mine middagsretter</div>
+    <div class="add-grid">
+      <input id="mealInput" type="text" placeholder="Navn på rett, f.eks. Lasagne" />
+      <input id="ingInput"  type="text" placeholder="Ingredienser (kommaseparert)" />
+    </div>
+    <div class="add-row-full">
+      <input id="urlInput" type="url" placeholder="Oppskriftslenke (valgfritt)" />
+    </div>
+    <div class="add-row-cat">
+      <span class="cat-label">Kategori:</span>
+      <button type="button" class="cat-btn" id="cat-fisk"    onclick="selectCat('fisk')">Fisk</button>
+      <button type="button" class="cat-btn" id="cat-vegetar" onclick="selectCat('vegetar')">Vegetar</button>
+      <button type="button" class="cat-btn" id="cat-rodt"    onclick="selectCat('rodt')">Rødt kjøtt</button>
+      <button type="button" class="cat-btn active-annet" id="cat-annet" onclick="selectCat('annet')">Annet</button>
+      <button onclick="addMeal()" style="margin-left:auto">+ Legg til</button>
+    </div>
+    <div style="display:flex;justify-content:flex-end;margin-bottom:8px;">
+      <button class="oda-btn" onclick="addDefaultMeals()">+ Legg til foreslåtte retter (Oda · Matprat · Godt.no)</button>
+    </div>
+    <div class="divider"></div>
+    <div class="meal-list" id="mealList"></div>
+  </div>
+</div>
+
+<!-- Sharing Modal -->
+<div class="modal-overlay" id="modalOverlay" onclick="handleOverlayClick(event)">
+  <div class="modal">
+    <div class="modal-title">Familiedeling</div>
+    <div class="modal-sub">Del ukesmenyen og handlelisten med familien i sanntid</div>
+
+    <div class="modal-tabs">
+      <button class="modal-tab active" id="tab-connect" onclick="switchTab('connect')">Koble til</button>
+      <button class="modal-tab"        id="tab-new"     onclick="switchTab('new')">Opprett ny</button>
+      <button class="modal-tab"        id="tab-active"  onclick="switchTab('active')" style="display:none">Aktiv deling</button>
+    </div>
+
+    <!-- Koble til -->
+    <div class="tab-panel active" id="panel-connect">
+      <div class="field-row">
+        <div class="field-label">Database-URL (fås fra den som opprettet familiedeling)</div>
+        <input type="url" id="connectDbUrl" placeholder="https://xxx-default-rtdb.europe-west1.firebasedatabase.app" />
+      </div>
+      <div class="field-row">
+        <div class="field-label">Familiekode</div>
+        <input type="text" id="connectCode" placeholder="F.eks. KARI7F" style="text-transform:uppercase;letter-spacing:2px;font-family:monospace;font-size:16px" maxlength="6" />
+      </div>
+      <div class="modal-error" id="connectError"></div>
+      <div class="modal-actions">
+        <button class="btn-primary" onclick="connectToFamily()">Koble til</button>
+        <button onclick="closeModal()">Avbryt</button>
+      </div>
+    </div>
+
+    <!-- Opprett ny -->
+    <div class="tab-panel" id="panel-new">
+      <div class="setup-steps">
+        <div class="setup-step">
+          <div class="step-num">1</div>
+          <div>Gå til <a href="https://console.firebase.google.com" target="_blank">console.firebase.google.com</a> og logg inn med en Google-konto</div>
+        </div>
+        <div class="setup-step">
+          <div class="step-num">2</div>
+          <div>Klikk <strong>"Add project"</strong> → gi det et navn (f.eks. "Familiemiddager") → klikk deg gjennom til prosjektet er klart</div>
+        </div>
+        <div class="setup-step">
+          <div class="step-num">3</div>
+          <div>Velg <strong>Build → Realtime Database → Create database</strong> → velg region <code>europe-west1</code> → velg <strong>"Start in test mode"</strong> → klikk <strong>Enable</strong></div>
+        </div>
+        <div class="setup-step">
+          <div class="step-num">4</div>
+          <div>Kopier <strong>Database URL</strong> som vises øverst — den ser omtrent slik ut:<br><code>https://ditt-prosjekt-default-rtdb.europe-west1.firebasedatabase.app/</code></div>
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field-label">Lim inn Database URL her</div>
+        <input type="url" id="newDbUrl" placeholder="https://xxx-default-rtdb.europe-west1.firebasedatabase.app" />
+      </div>
+      <div class="modal-error" id="newError"></div>
+      <div class="modal-actions">
+        <button class="btn-primary" onclick="createNewFamily()">Opprett familieplan</button>
+        <button onclick="closeModal()">Avbryt</button>
+      </div>
+      <div class="modal-note">⚠️ Firebase test-modus varer i 30 dager. Gå til Rules i Realtime Database og sett reglene permanent til <code>".read": true, ".write": true</code> for å unngå at tilgangen utløper.</div>
+    </div>
+
+    <!-- Aktiv deling -->
+    <div class="tab-panel" id="panel-active">
+      <div class="code-display">
+        <div class="code-label">Din familiekode</div>
+        <div class="code-value" id="activeCodeDisplay">------</div>
+        <span class="code-copy" onclick="copyCode()">Trykk for å kopiere</span>
+      </div>
+      <div class="modal-info">
+        Del denne koden og HTML-filen med familiemedlemmer. De åpner filen, klikker <strong>Lokal</strong>-knappen øverst til høyre og velger <strong>«Koble til»</strong>. De trenger:<br><br>
+        • <strong>Database URL:</strong> <span id="activeDbDisplay" style="font-size:11px;word-break:break-all;color:#185fa5;display:block;margin-top:2px"></span>
+        • <strong>Familiekode:</strong> <span id="activeCodeInInfo" style="font-family:monospace;font-size:15px;letter-spacing:2px">---</span>
+      </div>
+      <div class="modal-actions" style="margin-top:14px">
+        <button onclick="closeModal()">Lukk</button>
+        <button class="disconnect-btn" onclick="disconnectFamily()">Koble fra</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// =============================================
+// RECIPE DATA
+// =============================================
+const ODA_MEALS = [
+  { name: 'Torskegryte med tomat, oliven og chorizo', cat: 'fisk',
+    ingredients: 'torsk, hermetiske tomater, svarte oliven, chorizo, løk, hvitløk, paprika, olivenolje',
+    url: 'https://oda.com/no/recipes/1336-elin-larsen-elinlarsen-net-torskegryte-med-tomat-oliven-og-chorizo/' },
+  { name: 'Torsk med tomatsaus og stekte poteter', cat: 'fisk',
+    ingredients: 'torsk, hermetiske tomater, poteter, løk, hvitløk, timian, olivenolje',
+    url: 'https://oda.com/no/recipes/2587-oda-torsk-med-tomatsaus-og-stekte-poteter/' },
+  { name: 'Thaisuppe med torsk', cat: 'fisk',
+    ingredients: 'torsk, kokosmelk, thaipasta, lime, ingefær, chili, fiskesaus, vårløk',
+    url: 'https://oda.com/no/recipes/2885-oda-thaisuppe-med-torsk/' },
+  { name: 'Ovnsbakt torsk med grønnsaker og potetmos', cat: 'fisk',
+    ingredients: 'torsk, poteter, gulrot, brokkoli, smør, fløte, persille',
+    url: 'https://oda.com/no/recipes/3043-godfisk-no-ovnsbakt-torsk-med-gronnsaker-og-potetmos/' },
+  { name: 'Stekt torsk med kremet spisskal og brunet smør', cat: 'fisk',
+    ingredients: 'torsk, spisskal, smør, fløte, sitron, dill',
+    url: 'https://oda.com/no/recipes/4390-mari-bergman-stekt-torsk-med-kremet-spisskal-og-brunet-smor/' },
+  { name: 'Vegetarbolognese med tomater og linser', cat: 'vegetar',
+    ingredients: 'røde linser, hermetiske tomater, spaghetti, løk, hvitløk, gulrot, selleri, parmesan',
+    url: 'https://oda.com/no/recipes/2705-hanne-lenes-vegetar-bolognese-med-sote-tomater-og-linser/' },
+  { name: 'Vegetarlasagne', cat: 'vegetar',
+    ingredients: 'lasagneplater, hermetiske tomater, linser, paprika, squash, ricotta, revet ost',
+    url: 'https://oda.com/no/recipes/2788-oda-vegetarlasagne/' },
+  { name: 'Tacoform med linser og bønner', cat: 'vegetar',
+    ingredients: 'linser, svarte bønner, tacokrydder, ris, rømme, guacamole, tortillachips',
+    url: 'https://oda.com/no/recipes/3469-plantego-enkel-tacoform-med-linser-og-bonner/' },
+  { name: 'Kremet grønnsakspasta', cat: 'vegetar',
+    ingredients: 'pasta, gulrot, paprika, fløte, hvitløk, parmesan, spinat, smør',
+    url: 'https://oda.com/no/recipes/4404-ida-gran-jansen-kremet-gronnsakspasta-som-barna-elsker/' },
+  { name: 'Onepot pastagryte med grønnsaker', cat: 'vegetar',
+    ingredients: 'pasta, hermetiske tomater, løk, hvitløk, paprika, squash, parmesan, basilikum',
+    url: 'https://oda.com/no/recipes/4540-matjungelen-onepot-pastagryte/' },
+  { name: 'Spaghetti med kjøttboller', cat: 'rodt',
+    ingredients: 'spaghetti, kjøttdeig, hermetiske tomater, løk, hvitløk, parmesan, basilikum',
+    url: 'https://oda.com/no/recipes/856-oda-spaghetti-med-kjottboller/' },
+  { name: 'Svenske kjøttboller i fløtesaus', cat: 'rodt',
+    ingredients: 'kjøttdeig, fløte, buljong, soyasaus, potet, smør, tyttebærsyltetøy',
+    url: 'https://oda.com/no/recipes/2498-oda-svenske-kjottboller-i-flotesaus/' },
+  { name: 'Biff stroganoff', cat: 'rodt',
+    ingredients: 'biffstrimler, champignon, løk, fløte, sennep, buljong, ris',
+    url: 'https://oda.com/no/recipes/2729-silje-feiring-biff-stroganoff/' },
+  { name: 'Rask wok med biff og brokkolini', cat: 'rodt',
+    ingredients: 'biffstrimler, brokkolini, soyasaus, ingefær, hvitløk, sesamolje, ris, sesamfrø',
+    url: 'https://oda.com/no/recipes/4225-oda-rask-wok-med-biff-og-brokkolini/' },
+  { name: 'Kyllingtaco', cat: 'annet',
+    ingredients: 'kyllingfilet, tacokrydder, rømme, isbergsalat, tomat, tortillalefse, guacamole',
+    url: 'https://oda.com/no/recipes/1939-oda-kyllingtaco/' },
+  { name: 'Rask kylling stroganoff', cat: 'annet',
+    ingredients: 'kyllingfilet, champignon, fløte, løk, kyllingbuljong, ris, persille',
+    url: 'https://oda.com/no/recipes/3004-oda-rask-kylling-stroganoff/' },
+  { name: 'Kjapp ramen med kylling', cat: 'annet',
+    ingredients: 'kyllingfilet, ramenudler, soyasaus, kyllingbuljong, egg, vårløk, ingefær, sesamolje',
+    url: 'https://oda.com/no/recipes/2732-silje-feiring-kjapp-ramen-med-kylling/' },
+];
+
+const MATPRAT_MEALS = [
+  { name: 'Torsk med enkel tomatsaus', cat: 'fisk',
+    ingredients: 'torsk, hermetiske tomater, løk, hvitløk, olivenolje, sukker, basilikum',
+    url: 'https://www.matprat.no/oppskrifter/familien/torsk-med-enkel-tomatsaus/' },
+  { name: 'Kokos- og currypanne med torsk', cat: 'fisk',
+    ingredients: 'torsk, kokosmelk, currypasta, løk, hvitløk, ingefær, lime, koriander',
+    url: 'https://www.matprat.no/oppskrifter/sunn/kokos--og-currypanne-med-torsk/' },
+  { name: 'Stekt torsk med kremet spinat', cat: 'fisk',
+    ingredients: 'torsk, spinat, fløte, hvitløk, smør, sitron, pepper',
+    url: 'https://www.matprat.no/oppskrifter/familien/stekt-torsk-med-kremet-spinat/' },
+  { name: 'Vegetarisk linsesuppe', cat: 'vegetar',
+    ingredients: 'røde linser, gulrot, løk, hvitløk, hermetiske tomater, gurkemeie, ingefær, koriander',
+    url: 'https://www.matprat.no/oppskrifter/familien/vegetarisk-linsesuppe/' },
+  { name: 'Lasagne', cat: 'rodt',
+    ingredients: 'kjøttdeig, lasagneplater, hermetiske tomater, løk, hvitløk, fløte, parmesan, revet ost',
+    url: 'https://www.matprat.no/oppskrifter/familien/lasagne/' },
+  { name: 'One pot pasta med kjøttdeig', cat: 'rodt',
+    ingredients: 'pasta, kjøttdeig, hermetiske tomater, paprika, løk, hvitløk, parmesan',
+    url: 'https://www.matprat.no/oppskrifter/familien/one-pot-med-kjottdeig/' },
+  { name: 'Taco med kjøttdeig', cat: 'rodt',
+    ingredients: 'kjøttdeig, tacokrydder, tortilla, isbergsalat, tomat, rømme, revet ost, guacamole',
+    url: 'https://www.matprat.no/oppskrifter/familien/taco/' },
+  { name: 'One pot med kylling og pasta', cat: 'annet',
+    ingredients: 'kyllingfilet, pasta, hermetiske tomater, paprika, løk, kyllingbuljong, parmesan',
+    url: 'https://www.matprat.no/oppskrifter/familien/one-pot-med-kylling-og-pasta/' },
+  { name: 'Indisk kyllingsuppe', cat: 'annet',
+    ingredients: 'kyllingfilet, røde linser, spinat, kokosmelk, curry, ingefær, hvitløk, lime',
+    url: 'https://www.matprat.no/oppskrifter/kos/indisk-kyllingsuppe/' },
+];
+
+const GODT_MEALS = [
+  { name: 'Fiskesuppe med kokosmelk', cat: 'fisk',
+    ingredients: 'torsk, kokosmelk, rød currypasta, chili, ingefær, lime, vårløk, fiskesaus',
+    url: 'https://www.godt.no/oppskrifter/middag/10755/fiskesuppe-med-kokosmelk' },
+  { name: 'Torsk med chorizo-vinaigrette', cat: 'fisk',
+    ingredients: 'torsk, chorizo, olivenolje, hvitløk, sitron, tomat, persille',
+    url: 'https://www.godt.no/oppskrifter/middag/10160/torsk-med-chorizo-vinaigrette' },
+  { name: 'Pastagrateng med grønnsaker', cat: 'vegetar',
+    ingredients: 'pasta, paprika, squash, løk, hermetiske tomater, revet ost, hvitløk, olivenolje',
+    url: 'https://www.godt.no/oppskrifter/pasta/8207/saftig-pastagrateng-med-groennsaker' },
+  { name: 'Pasta med pepperbiff', cat: 'rodt',
+    ingredients: 'biff, pasta, champignon, paprika, pepperkorn, fløte, smør, persille',
+    url: 'https://www.godt.no/oppskrifter/middag/12571/pepperbiff-pasta' },
+  { name: 'Salsicciapasta', cat: 'rodt',
+    ingredients: 'salsiccia, pasta, tomatpuré, hvitvin, fløte, parmesan, chiliflak, hvitløk',
+    url: 'https://www.godt.no/oppskrifter/middag/13163/salsiccia-pasta' },
+  { name: 'Koteletter i ovn', cat: 'rodt',
+    ingredients: 'svinekoteletter, poteter, løk, hvitløk, timian, rosmarin, olivenolje, salt, pepper',
+    url: 'https://www.godt.no/oppskrifter/middag/10254/koteletter-i-ovn' },
+  { name: 'Smashburger med Big Mac-dressing', cat: 'rodt',
+    ingredients: 'kjøttdeig, burgerbrød, cheddar, isbergsalat, tomat, sylteagurk, løk, majones, ketchup, sennep, hvitløkspulver',
+    url: 'https://www.godt.no/oppskrifter/burger/12434/smashburger-med-bic-mac-dressing' },
+  { name: 'Kremet kyllingpasta', cat: 'annet',
+    ingredients: 'kyllingfilet, pasta, fløte, parmesan, hvitløk, basilikum, sitron',
+    url: 'https://www.godt.no/oppskrifter/pasta/8529/kremet-kyllingpasta' },
+  { name: 'One pot pasta med kylling og kantarell', cat: 'annet',
+    ingredients: 'kyllingfilet, pasta, spinat, kantarell, fløte, parmesan, hvitløk',
+    url: 'https://www.godt.no/oppskrifter/pasta/8186/one-pot-pasta-med-kremet-kylling' },
+  { name: 'Nudler med kyllingkjøttdeig og chili', cat: 'annet',
+    ingredients: 'kyllingkjøttdeig, rispasta, ingefær, hvitløk, chili, soyasaus, vårløk, sesamolje',
+    url: 'https://www.godt.no/oppskrifter/pasta/nudler/9042/nudler-med-smaksrik-kjoettdeig' },
+  { name: 'Kyllingfajitas', cat: 'annet',
+    ingredients: 'kyllingfilet, paprika, rødløk, hvitløk, fajitakrydder, lime, tortilla, rømme, guacamole, revet ost',
+    url: 'https://www.godt.no/oppskrifter/taco/15272/kyllingfajitas' },
+  { name: 'Pai med skinke og cheddar', cat: 'annet',
+    ingredients: 'paideig, skinke, cheddar, egg, fløte, rødløk, sennep, timian, pepper',
+    url: 'https://www.godt.no/oppskrifter/pai/14385/pai-med-skinke-og-cheddar' },
+];
+
+const ALL_DEFAULT_MEALS = [...ODA_MEALS, ...MATPRAT_MEALS, ...GODT_MEALS];
+
+// =============================================
+// FIREBASE / SHARING
+// =============================================
+let fbInitialized = false;
+let fbDb = null;
+let sharingActive = false;
+let currentCode = null;
+let currentDbUrl = null;
+
+function tryInitFirebase() {
+  const cfg = JSON.parse(localStorage.getItem('mdg_fb_config') || 'null');
+  if (!cfg || !cfg.dbUrl || !cfg.code) return;
+  currentDbUrl = cfg.dbUrl;
+  currentCode  = cfg.code;
+  doConnect(cfg.dbUrl, cfg.code, false);
+}
+
+function doConnect(url, code, isNew) {
+  setStatus('syncing', 'Kobler til…');
+  try {
+    if (!fbInitialized) {
+      firebase.initializeApp({ databaseURL: url });
+      fbInitialized = true;
+    }
+    fbDb = firebase.database();
+
+    fbDb.ref(code).once('value').then(snapshot => {
+      const data = snapshot.val();
+      if (isNew || !data) {
+        // Push local data to Firebase on first connect
+        return fbDb.ref(code).set({ meals, menu, checked, updatedAt: Date.now() });
+      } else {
+        // Load remote data
+        meals   = data.meals   || [];
+        menu    = data.menu    || {};
+        checked = data.checked || {};
+        saveLocal();
+        renderAll();
+      }
+    }).then(() => {
+      // Subscribe to real-time changes
+      fbDb.ref(code).on('value', snapshot => {
+        const data = snapshot.val();
+        if (!data) return;
+        meals   = data.meals   || [];
+        menu    = data.menu    || {};
+        checked = data.checked || {};
+        saveLocal();
+        renderAll();
+      });
+      sharingActive = true;
+      currentCode   = code;
+      currentDbUrl  = url;
+      localStorage.setItem('mdg_fb_config', JSON.stringify({ dbUrl: url, code }));
+      setStatus('synced', 'Familiedeling');
+      updateActiveTab();
+      document.getElementById('tab-active').style.display = '';
+      switchTab('active');
+    }).catch(e => {
+      setStatus('error', 'Feil');
+      const errId = isNew ? 'newError' : 'connectError';
+      showError(errId, 'Klarte ikke å koble til. Sjekk URL og at databasen er i testmodus. (' + e.message + ')');
+    });
+  } catch(e) {
+    setStatus('error', 'Feil');
+    const errId = isNew ? 'newError' : 'connectError';
+    showError(errId, 'Firebase-feil: ' + e.message);
+  }
+}
+
+function connectToFamily() {
+  const url  = document.getElementById('connectDbUrl').value.trim();
+  const code = document.getElementById('connectCode').value.trim().toUpperCase();
+  if (!url)  { showError('connectError', 'Skriv inn Database URL'); return; }
+  if (!code) { showError('connectError', 'Skriv inn familiekode'); return; }
+  doConnect(url, code, false);
+}
+
+function createNewFamily() {
+  const url = document.getElementById('newDbUrl').value.trim();
+  if (!url) { showError('newError', 'Skriv inn Database URL'); return; }
+  const code = generateCode();
+  doConnect(url, code, true);
+}
+
+function disconnectFamily() {
+  if (fbDb && currentCode) fbDb.ref(currentCode).off();
+  sharingActive = false; fbDb = null; currentCode = null; currentDbUrl = null;
+  localStorage.removeItem('mdg_fb_config');
+  setStatus('local', 'Lokal');
+  document.getElementById('tab-active').style.display = 'none';
+  closeModal();
+}
+
+function generateCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  return Array.from({length: 6}, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+}
+
+function pushToFirebase() {
+  if (!sharingActive || !fbDb || !currentCode) return;
+  fbDb.ref(currentCode).set({ meals, menu, checked, updatedAt: Date.now() })
+    .catch(() => setStatus('error', 'Synkfeil'));
+}
+
+function setStatus(state, label) {
+  document.getElementById('statusDot').className = 'status-dot dot-' + state;
+  document.getElementById('statusLabel').textContent = label;
+}
+
+function updateActiveTab() {
+  document.getElementById('activeCodeDisplay').textContent = currentCode || '------';
+  document.getElementById('activeCodeInInfo').textContent  = currentCode || '---';
+  document.getElementById('activeDbDisplay').textContent   = currentDbUrl || '';
+}
+
+function showError(id, msg) {
+  const el = document.getElementById(id);
+  el.textContent = msg; el.classList.add('show');
+}
+
+function openSharingModal() {
+  document.querySelectorAll('.modal-error').forEach(el => el.classList.remove('show'));
+  if (sharingActive) { updateActiveTab(); switchTab('active'); }
+  else switchTab('connect');
+  document.getElementById('modalOverlay').classList.add('open');
+}
+
+function closeModal() { document.getElementById('modalOverlay').classList.remove('open'); }
+
+function handleOverlayClick(e) {
+  if (e.target === document.getElementById('modalOverlay')) closeModal();
+}
+
+function switchTab(name) {
+  ['connect','new','active'].forEach(t => {
+    document.getElementById('tab-' + t).classList.toggle('active', t === name);
+    document.getElementById('panel-' + t).classList.toggle('active', t === name);
+  });
+}
+
+function copyCode() {
+  if (!currentCode) return;
+  const el = document.querySelector('.code-copy');
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(currentCode).then(() => {
+      el.textContent = '✓ Kopiert!';
+      setTimeout(() => el.textContent = 'Trykk for å kopiere', 2000);
+    });
+  } else {
+    prompt('Kopier familiekoden:', currentCode);
+  }
+}
+
+// =============================================
+// APP STATE & CONSTANTS
+// =============================================
+const DAYS = ['Mandag','Tirsdag','Onsdag','Torsdag','Fredag','Lørdag','Søndag'];
+const CAT_LABELS    = { fisk: 'Fisk', vegetar: 'Vegetar', rodt: 'Rødt kjøtt', annet: 'Annet' };
+const CAT_TAG_CLASS = { fisk: 'tag-fisk', vegetar: 'tag-vegetar', rodt: 'tag-rodt', annet: 'tag-annet' };
+const CAT_DAY_BG    = { fisk: '#e6f1fb', vegetar: '#eaf3de', rodt: '#fcebeb', annet: '#f1efe8' };
+const CAT_DAY_TEXT  = { fisk: '#0c447c', vegetar: '#27500a', rodt: '#791f1f', annet: '#444441' };
+const DAY_SLOT = { Mandag:'free', Tirsdag:'fisk', Onsdag:'free', Torsdag:'vegetar', Fredag:'free', Lørdag:'rodt', Søndag:'free' };
+
+let selectedCat = 'annet';
+let editingIdx  = -1;
+let editingCat  = 'annet';
+let meals   = JSON.parse(localStorage.getItem('mdg_meals')   || '[]');
+let menu    = JSON.parse(localStorage.getItem('mdg_menu')    || '{}');
+let checked = JSON.parse(localStorage.getItem('mdg_checked') || '{}');
+
+// =============================================
+// DATA FUNCTIONS
+// =============================================
+function saveLocal() {
+  try {
+    localStorage.setItem('mdg_meals',   JSON.stringify(meals));
+    localStorage.setItem('mdg_menu',    JSON.stringify(menu));
+    localStorage.setItem('mdg_checked', JSON.stringify(checked));
+  } catch(e) {}
+}
+
+function save() {
+  saveLocal();
+  pushToFirebase();
+}
+
+function addDefaultMeals() {
+  const existing = new Set(meals.map(m => m.name.toLowerCase()));
+  const toAdd = ALL_DEFAULT_MEALS.filter(m => !existing.has(m.name.toLowerCase()));
+  if (!toAdd.length) { alert('Alle foreslåtte oppskrifter er allerede lagt til!'); return; }
+  toAdd.forEach(m => meals.push(m));
+  save(); renderMeals();
+  alert(toAdd.length + ' oppskrifter ble lagt til!');
+}
+
+// =============================================
+// MEAL FUNCTIONS
+// =============================================
+function selectCat(cat) {
+  selectedCat = cat;
+  ['fisk','vegetar','rodt','annet'].forEach(c =>
+    document.getElementById('cat-' + c).className = 'cat-btn' + (c === cat ? ' active-' + c : ''));
+}
+
+function addMeal() {
+  const n = document.getElementById('mealInput').value.trim();
+  if (!n) return;
+  meals.push({ name: n, ingredients: document.getElementById('ingInput').value.trim(), url: document.getElementById('urlInput').value.trim(), cat: selectedCat });
+  document.getElementById('mealInput').value = '';
+  document.getElementById('ingInput').value  = '';
+  document.getElementById('urlInput').value  = '';
+  save(); renderMeals();
+}
+
+function removeMeal(i) {
+  if (!confirm('Slett "' + meals[i].name + '"?')) return;
+  meals.splice(i, 1);
+  if (editingIdx === i) editingIdx = -1;
+  save(); renderMeals();
+}
+
+function startEdit(i) {
+  editingIdx = i; editingCat = meals[i].cat || 'annet';
+  renderMeals();
+  const el = document.getElementById('edit-name-' + i);
+  if (el) el.focus();
+}
+
+function cancelEdit() { editingIdx = -1; renderMeals(); }
+
+function selectEditCat(cat) {
+  editingCat = cat;
+  ['fisk','vegetar','rodt','annet'].forEach(c => {
+    const b = document.getElementById('ecat-' + editingIdx + '-' + c);
+    if (b) b.className = 'cat-btn' + (c === cat ? ' active-' + c : '');
+  });
+}
+
+function saveEdit(i) {
+  const n = document.getElementById('edit-name-' + i).value.trim();
+  if (!n) return;
+  meals[i] = { name: n, ingredients: document.getElementById('edit-ing-' + i).value.trim(), url: document.getElementById('edit-url-' + i).value.trim(), cat: editingCat };
+  editingIdx = -1;
+  save(); renderMeals();
+}
+
+// =============================================
+// MENU FUNCTIONS
+// =============================================
+function generateMenu() {
+  if (!meals.length) { alert('Legg til minst én rett først!'); return; }
+  checked = {};
+  const byCat = { fisk: [], vegetar: [], rodt: [], annet: [] };
+  meals.forEach(m => byCat[m.cat || 'annet'].push(m));
+  const warns = [];
+  if (!byCat.fisk.length)    warns.push('fisk (tirsdag)');
+  if (!byCat.vegetar.length) warns.push('vegetar (torsdag)');
+  if (!byCat.rodt.length)    warns.push('rødt kjøtt (lørdag)');
+  document.getElementById('warnBox').innerHTML = warns.length
+    ? '<div class="warn">Mangler retter i kategori: <strong>' + warns.join(', ') + '</strong>. Disse dagene fylles med tilgjengelige retter.</div>' : '';
+  const usedNames = new Set();
+  function pickUnique(pool) {
+    const avail = pool.filter(m => !usedNames.has(m.name));
+    const picked = (avail.length ? avail : pool)[Math.floor(Math.random() * (avail.length || pool.length))];
+    usedNames.add(picked.name); return picked;
+  }
+  DAYS.forEach(d => {
+    const slot = DAY_SLOT[d];
+    const pool = slot === 'fisk' ? (byCat.fisk.length ? byCat.fisk : meals)
+               : slot === 'vegetar' ? (byCat.vegetar.length ? byCat.vegetar : meals)
+               : slot === 'rodt' ? (byCat.rodt.length ? byCat.rodt : meals)
+               : meals;
+    menu[d] = { meal: pickUnique(pool), slot };
+  });
+  save(); renderMenu(); renderShop();
+}
+
+function setDay(d) {
+  if (!meals.length) return;
+  const slot = DAY_SLOT[d] || 'free';
+  const byCat = { fisk: [], vegetar: [], rodt: [], annet: [] };
+  meals.forEach(m => byCat[m.cat || 'annet'].push(m));
+  const pool = slot === 'fisk' ? (byCat.fisk.length ? byCat.fisk : meals)
+             : slot === 'vegetar' ? (byCat.vegetar.length ? byCat.vegetar : meals)
+             : slot === 'rodt' ? (byCat.rodt.length ? byCat.rodt : meals)
+             : meals;
+  const used = new Set(DAYS.filter(x => x !== d && menu[x]).map(x => menu[x].meal.name));
+  const avail = pool.filter(m => !used.has(m.name));
+  const src = avail.length ? avail : pool;
+  menu[d] = { meal: src[Math.floor(Math.random() * src.length)], slot };
+  save(); renderMenu(); renderShop();
+}
+
+function clearDay(d) { delete menu[d]; save(); renderMenu(); renderShop(); }
+
+// =============================================
+// RENDER FUNCTIONS
+// =============================================
+function renderAll() { renderMeals(); renderMenu(); renderShop(); }
+
+function linkHtml(url) {
+  if (!url) return '';
+  return '<div class="meal-link"><svg style="width:12px;height:12px;vertical-align:middle;margin-right:3px" viewBox="0 0 12 12" fill="none" stroke="#185fa5" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 2H2a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V7"/><path d="M8 1h3v3M6.5 5.5 11 1"/></svg><a href="' + url + '" target="_blank" rel="noopener">Se oppskrift</a></div>';
+}
+
+function renderMeals() {
+  const el = document.getElementById('mealList');
+  if (!meals.length) { el.innerHTML = '<div class="empty">Ingen retter lagt til ennå</div>'; return; }
+  let html = '';
+  ['fisk','vegetar','rodt','annet'].forEach(cat => {
+    meals.forEach((m, i) => {
+      if ((m.cat || 'annet') !== cat) return;
+      if (editingIdx === i) {
+        html += '<div class="meal-item editing"><div class="meal-info">' +
+          '<span class="cat-tag ' + CAT_TAG_CLASS[cat] + '">' + CAT_LABELS[cat] + '</span>' +
+          '<div class="edit-form">' +
+          '<input id="edit-name-' + i + '" type="text" value="' + esc(m.name) + '" placeholder="Navn på rett" />' +
+          '<input id="edit-ing-'  + i + '" type="text" value="' + esc(m.ingredients||'') + '" placeholder="Ingredienser (kommaseparert)" />' +
+          '<input id="edit-url-'  + i + '" type="url"  value="' + esc(m.url||'') + '" placeholder="Oppskriftslenke (valgfritt)" />' +
+          '<div class="edit-cats">' +
+          ['fisk','vegetar','rodt','annet'].map(c =>
+            '<button type="button" id="ecat-' + i + '-' + c + '" class="cat-btn' + (editingCat === c ? ' active-' + c : '') + '" onclick="selectEditCat(\'' + c + '\')">' + CAT_LABELS[c] + '</button>'
+          ).join('') + '</div>' +
+          '<div class="edit-btns"><button class="btn-save" onclick="saveEdit(' + i + ')">Lagre</button><button onclick="cancelEdit()">Avbryt</button></div>' +
+          '</div></div></div>';
+      } else {
+        html += '<div class="meal-item"><div class="meal-info">' +
+          '<span class="cat-tag ' + CAT_TAG_CLASS[cat] + '">' + CAT_LABELS[cat] + '</span>' +
+          '<div class="meal-name">' + m.name + '</div>' +
+          (m.ingredients ? '<div class="meal-ing">' + m.ingredients + '</div>' : '') +
+          linkHtml(m.url) +
+          '</div><div class="meal-actions"><button onclick="startEdit(' + i + ')">Rediger</button><button onclick="removeMeal(' + i + ')">Slett</button></div></div>';
+      }
+    });
+  });
+  el.innerHTML = html;
+}
+
+function renderMenu() {
+  const el = document.getElementById('dayGrid');
+  el.innerHTML = DAYS.map(d => {
+    const entry = menu[d], m = entry && entry.meal, slot = entry && entry.slot;
+    const tagHtml = (slot && slot !== 'free' && m)
+      ? '<div class="day-tag" style="background:' + CAT_DAY_BG[slot] + ';color:' + CAT_DAY_TEXT[slot] + '">' + CAT_LABELS[slot] + '</div>' : '';
+    return '<div class="day-card"><div class="day-label">' + d + '</div>' + tagHtml +
+      '<div class="day-meal">' + (m ? m.name : '<span style="color:#888780;font-size:12px">Ikke satt</span>') +
+      (m && m.url ? '<a href="' + m.url + '" target="_blank" rel="noopener">Se oppskrift</a>' : '') +
+      '</div><div class="day-actions"><button onclick="setDay(\'' + d + '\')">Bytt</button>' +
+      (m ? '<button onclick="clearDay(\'' + d + '\')">Fjern</button>' : '') +
+      '</div></div>';
+  }).join('');
+}
+
+function renderShop() {
+  const ingMap = {}, ingOrder = [];
+  DAYS.forEach(d => {
+    const entry = menu[d], m = entry && entry.meal;
+    if (m && m.ingredients) {
+      m.ingredients.split(',').forEach(raw => {
+        const t = raw.trim(); if (!t) return;
+        const key = t.toLowerCase();
+        if (!ingMap[key]) { ingMap[key] = { display: t, mealNames: [] }; ingOrder.push(key); }
+        if (!ingMap[key].mealNames.includes(m.name)) ingMap[key].mealNames.push(m.name);
+      });
+    }
+  });
+  const el = document.getElementById('shopList');
+  document.getElementById('shopBadge').textContent = ingOrder.length + ' ingredienser';
+  if (!ingOrder.length) { el.innerHTML = '<div class="empty">Ingen ingredienser å vise</div>'; return; }
+  el.innerHTML = ingOrder.map((key, i) => {
+    const { display, mealNames } = ingMap[key];
+    const id = 'chk_' + i, done = checked[display] || false;
+    const tagsHtml = mealNames.length ? '<div class="shop-meal-tags">' + mealNames.map(mn => '<span class="shop-meal-tag">' + mn + '</span>').join('') + '</div>' : '';
+    return '<div class="shop-item"><input type="checkbox" id="' + id + '" ' + (done ? 'checked' : '') +
+      ' onchange="toggleCheck(\'' + display.replace(/'/g,"\\'") + '\', this.checked)" />' +
+      '<div class="shop-item-body"><label for="' + id + '" class="' + (done ? 'done' : '') + '">' + display + '</label>' + tagsHtml + '</div></div>';
+  }).join('');
+}
+
+function toggleCheck(ing, val) { checked[ing] = val; save(); renderShop(); }
+function esc(s) { return s.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// =============================================
+// KEYBOARD SHORTCUTS
+// =============================================
+document.getElementById('mealInput').addEventListener('keydown', e => { if (e.key==='Enter') document.getElementById('ingInput').focus(); });
+document.getElementById('ingInput').addEventListener('keydown',  e => { if (e.key==='Enter') document.getElementById('urlInput').focus(); });
+document.getElementById('urlInput').addEventListener('keydown',  e => { if (e.key==='Enter') addMeal(); });
+
+// =============================================
+// INIT
+// =============================================
+// Merge default meals on first launch of this version
+if (!localStorage.getItem('mdg_defaults_v4')) {
+  const existingNames = new Set(meals.map(m => m.name.toLowerCase()));
+  ALL_DEFAULT_MEALS.forEach(m => {
+    if (!existingNames.has(m.name.toLowerCase())) meals.push(m);
+  });
+  localStorage.setItem('mdg_defaults_v4', '1');
+  saveLocal();
+}
+
+renderAll();
+tryInitFirebase(); // Reconnect to Firebase if previously configured
+</script>
+</body>
+</html>
